@@ -4,57 +4,57 @@ on:
   workflow_call:
     inputs:
       node_version:
-        description: 'Node.js version to use for builds'
+        description: "Node.js version to use for builds"
         required: false
         type: string
-        default: '20'
+        default: "20"
       docker_registry:
-        description: 'Docker registry URL (e.g., registry.digitalocean.com/yourname)'
+        description: "Docker registry URL (e.g., registry.digitalocean.com/yourname)"
         required: true
         type: string
       workspaces:
-        description: 'Comma-separated list of workspaces to build (e.g., api,stream,web)'
+        description: "Comma-separated list of workspaces to build (e.g., api,stream,web)"
         required: false
         type: string
-        default: 'api,stream,web'
+        default: "api,stream,web"
       validate_k8s:
-        description: 'Whether to validate Kubernetes manifests'
+        description: "Whether to validate Kubernetes manifests"
         required: false
         type: boolean
         default: true
       validate_docker_compose:
-        description: 'Whether to validate docker-compose files'
+        description: "Whether to validate docker-compose files"
         required: false
         type: boolean
         default: true
       next_public_api_base_url:
-        description: 'NEXT_PUBLIC_API_BASE_URL for web builds'
+        description: "NEXT_PUBLIC_API_BASE_URL for web builds"
         required: false
         type: string
-        default: ''
+        default: ""
       next_public_keycloak_client_id:
-        description: 'NEXT_PUBLIC_KEYCLOAK_CLIENT_ID for web builds'
+        description: "NEXT_PUBLIC_KEYCLOAK_CLIENT_ID for web builds"
         required: false
         type: string
-        default: ''
+        default: ""
       next_public_keycloak_issuer:
-        description: 'NEXT_PUBLIC_KEYCLOAK_ISSUER for web builds'
+        description: "NEXT_PUBLIC_KEYCLOAK_ISSUER for web builds"
         required: false
         type: string
-        default: ''
+        default: ""
       nextauth_url:
-        description: 'NEXTAUTH_URL for web builds'
+        description: "NEXTAUTH_URL for web builds"
         required: false
         type: string
-        default: ''
+        default: ""
       nextauth_secret:
-        description: 'NEXTAUTH_SECRET for web builds'
+        description: "NEXTAUTH_SECRET for web builds"
         required: false
         type: string
-        default: 'dummy-secret-for-build'
+        default: "dummy-secret-for-build"
     secrets:
       DIGITALOCEAN_ACCESS_TOKEN:
-        description: 'DigitalOcean access token for container registry'
+        description: "DigitalOcean access token for container registry"
         required: true
 
 permissions:
@@ -112,12 +112,17 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ inputs.node_version }}
-          cache: 'npm'
+          cache: "npm"
 
       - name: Install dependencies
+        env:
+          # Prisma requires DATABASE_URL during generation
+          DATABASE_URL: postgresql://dummy:dummy@localhost:5432/dummy
         run: npm ci
 
       - name: Build API
+        env:
+          DATABASE_URL: postgresql://dummy:dummy@localhost:5432/dummy
         run: npm run build --workspace=apps/api
 
       - name: Run API tests
@@ -136,12 +141,17 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ inputs.node_version }}
-          cache: 'npm'
+          cache: "npm"
 
       - name: Install dependencies
+        env:
+          # Prisma requires DATABASE_URL during generation
+          DATABASE_URL: postgresql://dummy:dummy@localhost:5432/dummy
         run: npm ci
 
       - name: Build Stream
+        env:
+          DATABASE_URL: postgresql://dummy:dummy@localhost:5432/dummy
         run: npm run build --workspace=apps/stream
 
       - name: Run Stream tests
@@ -160,13 +170,17 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ inputs.node_version }}
-          cache: 'npm'
+          cache: "npm"
 
       - name: Install dependencies
+        env:
+          # Prisma requires DATABASE_URL during generation
+          DATABASE_URL: postgresql://dummy:dummy@localhost:5432/dummy
         run: npm ci
 
       - name: Build Web (requires env vars)
         env:
+          DATABASE_URL: postgresql://dummy:dummy@localhost:5432/dummy
           NEXT_PUBLIC_API_BASE_URL: ${{ inputs.next_public_api_base_url }}
           NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: ${{ inputs.next_public_keycloak_client_id }}
           NEXT_PUBLIC_KEYCLOAK_ISSUER: ${{ inputs.next_public_keycloak_issuer }}
@@ -320,7 +334,15 @@ jobs:
   pr-check-summary:
     name: PR Check Summary
     runs-on: ubuntu-latest
-    needs: [detect-changes, build-api, build-stream, build-web, build-and-push-docker-images, validate-deployment]
+    needs:
+      [
+        detect-changes,
+        build-api,
+        build-stream,
+        build-web,
+        build-and-push-docker-images,
+        validate-deployment,
+      ]
     if: always()
     steps:
       - name: Check build status
