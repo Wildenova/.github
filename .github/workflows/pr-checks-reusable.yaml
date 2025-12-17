@@ -57,6 +57,10 @@ on:
         description: 'DigitalOcean access token for container registry'
         required: true
 
+permissions:
+  contents: read
+  pull-requests: read
+
 env:
   DOCKER_REGISTRY: ${{ inputs.docker_registry }}
 
