@@ -198,47 +198,23 @@ jobs:
     if: needs.detect-changes.outputs.any == 'true'
     strategy:
       matrix:
-        include:
-          - service: api
-            should-build: ${{ needs.detect-changes.outputs.api }}
-          - service: stream
-            should-build: ${{ needs.detect-changes.outputs.stream }}
-          - service: web
-            should-build: ${{ needs.detect-changes.outputs.web }}
+        service: [api, stream, web]
     steps:
-      - name: Skip if no changes
-        if: matrix.should-build != 'true'
-        run: |
-          echo "Skipping ${{ matrix.service }} - no changes detected"
-          exit 0
-
       - name: Checkout code
-        if: matrix.should-build == 'true'
         uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
-        if: matrix.should-build == 'true'
         uses: docker/setup-buildx-action@v3
 
       - name: Install doctl
-        if: matrix.should-build == 'true'
         uses: digitalocean/action-doctl@v2
         with:
           token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
 
       - name: Login to DigitalOcean Container Registry
-        if: matrix.should-build == 'true'
         run: doctl registry login --expiry-seconds 1200
 
-      - name: Extract PR metadata
-        if: matrix.should-build == 'true'
-        id: meta
-        run: |
-          echo "pr_number=${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
-          echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-
-      - name: Build and push Docker image with PR tag
-        if: matrix.should-build == 'true'
+      - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -246,8 +222,8 @@ jobs:
           push: true
           platforms: linux/amd64
           tags: |
-            ${{ env.DOCKER_REGISTRY }}/datalove-${{ matrix.service }}:pr-${{ steps.meta.outputs.pr_number }}
-            ${{ env.DOCKER_REGISTRY }}/datalove-${{ matrix.service }}:pr-${{ steps.meta.outputs.pr_number }}-${{ steps.meta.outputs.sha_short }}
+            ${{ env.DOCKER_REGISTRY }}/datalove-${{ matrix.service }}:pr-${{ github.event.pull_request.number }}
+            ${{ env.DOCKER_REGISTRY }}/datalove-${{ matrix.service }}:pr-${{ github.event.pull_request.number }}-${{ github.sha }}
           cache-from: type=registry,ref=${{ env.DOCKER_REGISTRY }}/datalove-${{ matrix.service }}:buildcache
           cache-to: type=registry,ref=${{ env.DOCKER_REGISTRY }}/datalove-${{ matrix.service }}:buildcache,mode=max
           build-args: |
@@ -374,7 +350,7 @@ jobs:
             fi
           fi
 
-          if [ "${{ needs.build-and-push-docker-images.result }}" == "success" ]; then
+          if [ "${{ needs.build-and-push-docker-images.result }}" == "success" ] || [ "${{ needs.build-and-push-docker-images.result }}" == "skipped" ]; then
             echo "✅ Docker images build & push passed" >> $GITHUB_STEP_SUMMARY
           else
             echo "❌ Docker images build & push failed" >> $GITHUB_STEP_SUMMARY
@@ -393,7 +369,7 @@ jobs:
           (needs.detect-changes.outputs.api == 'true' && needs.build-api.result != 'success') ||
           (needs.detect-changes.outputs.stream == 'true' && needs.build-stream.result != 'success') ||
           (needs.detect-changes.outputs.web == 'true' && needs.build-web.result != 'success') ||
-          needs.build-and-push-docker-images.result != 'success' ||
+          (needs.build-and-push-docker-images.result != 'success' && needs.build-and-push-docker-images.result != 'skipped') ||
           (needs.validate-deployment.result != 'success' && needs.validate-deployment.result != 'skipped')
         run: |
           echo "One or more builds failed"
