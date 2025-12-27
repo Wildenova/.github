@@ -13,10 +13,10 @@ on:
         required: true
         type: string
       workspaces:
-        description: "Comma-separated list of workspaces to build (e.g., api,stream,web)"
+        description: "Comma-separated list of workspaces to build (e.g., api,web)"
         required: false
         type: string
-        default: "api,stream,web"
+        default: "api,web"
       validate_k8s:
         description: "Whether to validate Kubernetes manifests"
         required: false
@@ -70,7 +70,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       api: ${{ steps.filter.outputs.api }}
-      stream: ${{ steps.filter.outputs.stream }}
       web: ${{ steps.filter.outputs.web }}
       any: ${{ steps.filter.outputs.any }}
     steps:
@@ -86,10 +85,6 @@ jobs:
               - 'apps/api/**'
               - 'packages/**'
               - '.docker/Dockerfile.api'
-            stream:
-              - 'apps/stream/**'
-              - 'packages/**'
-              - '.docker/Dockerfile.stream'
             web:
               - 'apps/web/**'
               - 'packages/**'
@@ -127,35 +122,6 @@ jobs:
 
       - name: Run API tests
         run: npm run test --workspace=apps/api || echo "No tests configured yet"
-
-  build-stream:
-    name: Build Stream
-    runs-on: ubuntu-latest
-    needs: detect-changes
-    if: needs.detect-changes.outputs.stream == 'true'
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ inputs.node_version }}
-          cache: "npm"
-
-      - name: Install dependencies
-        env:
-          # Prisma requires DATABASE_URL during generation
-          DATABASE_URL: postgresql://dummy:dummy@localhost:5432/dummy
-        run: npm ci
-
-      - name: Build Stream
-        env:
-          DATABASE_URL: postgresql://dummy:dummy@localhost:5432/dummy
-        run: npm run build --workspace=apps/stream
-
-      - name: Run Stream tests
-        run: npm run test --workspace=apps/stream || echo "No tests configured yet"
 
   build-web:
     name: Build Web
@@ -198,7 +164,7 @@ jobs:
     if: needs.detect-changes.outputs.any == 'true'
     strategy:
       matrix:
-        service: [api, stream, web]
+        service: [api, web]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -296,10 +262,6 @@ jobs:
             echo "- 🚀 **API**: \`${{ inputs.docker_registry }}/datalove-api:pr-${{ github.event.pull_request.number }}\`" >> $GITHUB_STEP_SUMMARY
           fi
 
-          if [ "${{ needs.detect-changes.outputs.stream }}" == "true" ]; then
-            echo "- 🚀 **Stream**: \`${{ inputs.docker_registry }}/datalove-stream:pr-${{ github.event.pull_request.number }}\`" >> $GITHUB_STEP_SUMMARY
-          fi
-
           if [ "${{ needs.detect-changes.outputs.web }}" == "true" ]; then
             echo "- 🚀 **Web**: \`${{ inputs.docker_registry }}/datalove-web:pr-${{ github.event.pull_request.number }}\`" >> $GITHUB_STEP_SUMMARY
           fi
@@ -314,7 +276,6 @@ jobs:
       [
         detect-changes,
         build-api,
-        build-stream,
         build-web,
         build-and-push-docker-images,
         validate-deployment,
@@ -331,14 +292,6 @@ jobs:
               echo "✅ API build passed" >> $GITHUB_STEP_SUMMARY
             else
               echo "❌ API build failed" >> $GITHUB_STEP_SUMMARY
-            fi
-          fi
-
-          if [ "${{ needs.detect-changes.outputs.stream }}" == "true" ]; then
-            if [ "${{ needs.build-stream.result }}" == "success" ]; then
-              echo "✅ Stream build passed" >> $GITHUB_STEP_SUMMARY
-            else
-              echo "❌ Stream build failed" >> $GITHUB_STEP_SUMMARY
             fi
           fi
 
@@ -367,7 +320,6 @@ jobs:
       - name: Fail if any build failed
         if: |
           (needs.detect-changes.outputs.api == 'true' && needs.build-api.result != 'success') ||
-          (needs.detect-changes.outputs.stream == 'true' && needs.build-stream.result != 'success') ||
           (needs.detect-changes.outputs.web == 'true' && needs.build-web.result != 'success') ||
           (needs.build-and-push-docker-images.result != 'success' && needs.build-and-push-docker-images.result != 'skipped') ||
           (needs.validate-deployment.result != 'success' && needs.validate-deployment.result != 'skipped')
