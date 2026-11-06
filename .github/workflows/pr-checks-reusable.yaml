@@ -9,7 +9,7 @@ on:
         type: string
         default: "20"
       docker_registry:
-        description: "Docker registry URL (e.g., docker.io/username)"
+        description: "Docker registry URL (e.g., registry.digitalocean.com/your-registry)"
         required: true
         type: string
       workspaces:
@@ -53,11 +53,8 @@ on:
         type: string
         default: "dummy-secret-for-build"
     secrets:
-      DOCKERHUB_USERNAME:
-        description: "DockerHub username for container registry"
-        required: true
-      DOCKERHUB_TOKEN:
-        description: "DockerHub access token for container registry"
+      DIGITALOCEAN_ACCESS_TOKEN:
+        description: "DigitalOcean API token with write access to the container registry"
         required: true
 
 permissions:
@@ -89,9 +86,9 @@ jobs:
               - 'packages/**'
               - '.docker/Dockerfile.api'
             web:
-              - 'apps/web/**'
+              - 'apps/web-live/**'
+              - 'apps/web-demo-live/**'
               - 'packages/**'
-              - '.docker/Dockerfile.web'
             any:
               - 'apps/**'
               - 'packages/**'
@@ -155,10 +152,7 @@ jobs:
           NEXT_PUBLIC_KEYCLOAK_ISSUER: ${{ inputs.next_public_keycloak_issuer }}
           NEXTAUTH_URL: ${{ inputs.nextauth_url }}
           NEXTAUTH_SECRET: ${{ inputs.nextauth_secret }}
-        run: npm run build --workspace=apps/web
-
-      - name: Run Web tests
-        run: npm run test --workspace=apps/web || echo "No tests configured yet"
+        run: npm run build --workspace=apps/web-live --workspace=apps/web-demo-live
 
   build-and-push-docker-images:
     name: Build & Push Docker Image - ${{ matrix.service }}
@@ -167,7 +161,8 @@ jobs:
     if: needs.detect-changes.outputs.any == 'true'
     strategy:
       matrix:
-        service: [api, web]
+        # The web apps deploy on Vercel, so the API is the only image.
+        service: [api]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -175,11 +170,13 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Login to DockerHub
-        uses: docker/login-action@v3
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Login to DOCR
+        run: doctl registry login --expiry-seconds 3600
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
@@ -195,9 +192,6 @@ jobs:
           cache-to: type=registry,ref=${{ env.DOCKER_REGISTRY }}/datalove-${{ matrix.service }}:buildcache,mode=max
           build-args: |
             NODE_ENV=production
-            NEXT_PUBLIC_API_BASE_URL=${{ matrix.service == 'web' && inputs.next_public_api_base_url || '' }}
-            NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=${{ matrix.service == 'web' && inputs.next_public_keycloak_client_id || '' }}
-            NEXT_PUBLIC_KEYCLOAK_ISSUER=${{ matrix.service == 'web' && inputs.next_public_keycloak_issuer || '' }}
 
   validate-deployment:
     name: Validate Deployment Configuration
@@ -261,10 +255,6 @@ jobs:
 
           if [ "${{ needs.detect-changes.outputs.api }}" == "true" ]; then
             echo "- 🚀 **API**: \`${{ inputs.docker_registry }}/datalove-api:pr-${{ github.event.pull_request.number }}\`" >> $GITHUB_STEP_SUMMARY
-          fi
-
-          if [ "${{ needs.detect-changes.outputs.web }}" == "true" ]; then
-            echo "- 🚀 **Web**: \`${{ inputs.docker_registry }}/datalove-web:pr-${{ github.event.pull_request.number }}\`" >> $GITHUB_STEP_SUMMARY
           fi
 
           echo "" >> $GITHUB_STEP_SUMMARY
